@@ -10,6 +10,10 @@ without a new Baïkal or PHP version.
 
 ## Unreleased
 
+## 0.13.0-php8.4.27-r2 - 2026-10-21
+
+Baïkal 0.13.0, PHP 8.4.27, linux/amd64.
+
 - CI: a change in platforms (e.g. arm64 being added) now publishes a new release.
 
 ## 0.13.0-php8.4.27 - 2026-10-21
