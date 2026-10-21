@@ -6,7 +6,7 @@
                          commits it, and creates the GitHub release from RELEASE.md
 
 Inputs come from environment variables: BAIKAL_VERSION, PHP_VERSION (full, e.g. 8.4.27),
-and for publish also VERSION, PLATFORMS, IMAGE, DIGEST, COMMIT.
+PLATFORMS, and for publish also VERSION, IMAGE, DIGEST, COMMIT.
 Set DRY_RUN=1 to skip all git/gh calls (prints what would happen).
 """
 import datetime
@@ -43,13 +43,24 @@ def split_changelog(text):
     return text[:start], text[start:end].strip(), text[end:]
 
 
+def last_platforms(after):
+    """Platforms recorded in the newest version section of the changelog, or None."""
+    m = re.search(r"^Baïkal \S+, PHP \S+, (.+)\.$", after, re.M)
+    return m.group(1) if m else None
+
+
+def platforms_changed(after):
+    last = last_platforms(after)
+    return last is not None and last != os.environ["PLATFORMS"]
+
+
 def plan():
     base = f"{os.environ['BAIKAL_VERSION']}-php{os.environ['PHP_VERSION']}"
-    _, notes, _ = split_changelog(open(CHANGELOG, encoding="utf-8").read())
+    _, notes, after = split_changelog(open(CHANGELOG, encoding="utf-8").read())
     version = ""
     if not release_exists(base):
         version = base
-    elif notes:
+    elif notes or platforms_changed(after):
         n = 2
         while release_exists(f"{base}-r{n}"):
             n += 1
@@ -63,6 +74,9 @@ def publish():
     text = open(CHANGELOG, encoding="utf-8").read()
     before, notes, after = split_changelog(text)
     changes = notes or NO_CHANGES
+    if platforms_changed(after):
+        note = f"- Now built for {env['PLATFORMS']} (was {last_platforms(after)})."
+        changes = f"{note}\n{notes}" if notes else note
 
     # CHANGELOG: empty Unreleased, new version section underneath
     section = (

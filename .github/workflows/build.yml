@@ -127,6 +127,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           BAIKAL_VERSION: ${{ steps.v.outputs.baikal }}
           PHP_VERSION: ${{ steps.smoke.outputs.php_full }}
+          PLATFORMS: ${{ steps.p.outputs.platforms }}
         run: |
           python3 .github/scripts/release.py plan | tee -a "$GITHUB_OUTPUT"
 

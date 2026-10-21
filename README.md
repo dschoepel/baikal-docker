@@ -55,6 +55,7 @@ Each new image version gets a [GitHub release](https://github.com/dschoepel/baik
 image tag, named `<Baïkal version>-php<PHP version>` (e.g. `0.13.0-php8.4.27`). CI publishes one when:
 
 - the Baïkal or PHP version changes (including PHP patch releases picked up by the weekly rebuild), or
+- the platforms change (e.g. arm64 gets added), or
 - [CHANGELOG.md](CHANGELOG.md) has notes under **Unreleased**. The release then gets a `-r2`, `-r3`, … suffix if
   the versions didn't change.
 
