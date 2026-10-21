@@ -185,4 +185,5 @@ jobs:
 
       - name: Release summary
         if: steps.rel.outputs.version != ''
-        run: echo "- Release: [${{ steps.rel.outputs.version }}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.rel.outputs.version }})" >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          echo "- Release: [${{ steps.rel.outputs.version }}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.rel.outputs.version }})" >> "$GITHUB_STEP_SUMMARY"
