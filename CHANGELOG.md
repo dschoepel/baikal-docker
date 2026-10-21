@@ -10,6 +10,10 @@ without a new Baïkal or PHP version.
 
 ## Unreleased
 
+## 0.13.0-php8.4.27 - 2026-10-21
+
+Baïkal 0.13.0, PHP 8.4.27, linux/amd64.
+
 - First image: Baïkal 0.13.0 on nginx + PHP 8.4, based on [ckulka/baikal-docker](https://github.com/ckulka/baikal-docker).
   Requires PHP 8.4.27 or newer, which fixes CVE-2026-109618 / CVE-2026-109619.
 - Removed ckulka's Home Assistant fix (`APPLY_HOME_ASSISTANT_FIX`). It only works with Baïkal 0.10.1.
