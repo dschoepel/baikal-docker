@@ -32,7 +32,7 @@ scripts, and nginx config), © 2015 Cyrill Kulka, MIT license. The original copy
 | Port, volumes, `conf.d/*.conf` | 80, `config` + `Specific` | same |
 | PHP extensions, msmtp | mysql, pgsql, sqlite3, curl, mbstring, xml; msmtp | same |
 | Home Assistant fix (`APPLY_HOME_ASSISTANT_FIX`) | included | **removed**: it only patches Baïkal 0.10.1's bundled sabre/dav and would stop the container from starting on 0.13.0 |
-| Architectures | amd64, arm64, arm/v7, 386 | **amd64** for now |
+| Architectures | amd64, arm64, arm/v7, 386 | **amd64**, plus **arm64** automatically once a patched PHP is available for it |
 | Registry | Docker Hub | ghcr.io |
 
 Environment variables that still work: `MSMTPRC`, `BAIKAL_SKIP_CHOWN`, `NGINX_ENTRYPOINT_QUIET_LOGS`.
@@ -83,8 +83,10 @@ If you had set `APPLY_HOME_ASSISTANT_FIX=true`, it now does nothing. Remove it.
   [release notes](https://github.com/sabre-io/Baikal/releases) for the minimum PHP version.
 - **Bump PHP:** change `ARG PHP_VERSION=` (e.g. `8.5`) and `ARG MIN_PHP_VERSION=` to the oldest acceptable patch release.
   Raise `MIN_PHP_VERSION` whenever a PHP security release comes out, so the build refuses an unpatched PHP.
-- **Add arm64:** add `linux/arm64` to `platforms` in [build.yml](.github/workflows/build.yml) (both build steps), once the
-  Sury repo has the required PHP version for arm64. The smoke test only runs on amd64.
+- **arm64:** each CI run checks the Sury repo's arm64 PHP version. If it meets `MIN_PHP_VERSION`, the image is built for
+  amd64 + arm64. If not, that run builds amd64 only and shows a warning. The arm64 image is checked under emulation
+  after it's pushed (PHP version and extensions). To pick up arm64 sooner than the weekly run, start the workflow
+  manually (Actions → Build and publish → Run workflow).
 
 CI ([build.yml](.github/workflows/build.yml)) runs on pushes to `main`, `v*` tags, a weekly schedule and manual
 dispatch. Before pushing anything it runs a smoke test: starts the container, checks the PHP version and extensions,

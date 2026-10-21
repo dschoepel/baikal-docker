@@ -34,6 +34,26 @@ jobs:
           echo "php=$php" >> "$GITHUB_OUTPUT"
           echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
+      # arm64 is only built once the Sury repo has a PHP build for it that meets
+      # MIN_PHP_VERSION. Until then, build amd64 alone instead of failing.
+      - name: Pick platforms
+        id: p
+        run: |
+          codename=$(docker run --rm nginx:1 sh -c '. /etc/os-release; echo $VERSION_CODENAME')
+          arm=$(curl -fsSL "https://packages.sury.org/php/dists/$codename/main/binary-arm64/Packages.gz" | gunzip             | awk '/^Package: php${{ steps.v.outputs.php }}-fpm$/{p=1} p&&/^Version:/{print $2;p=0}' | sort -V | tail -1)
+          echo "arm64 php${{ steps.v.outputs.php }}-fpm on $codename: ${arm:-none}"
+          if [ -n "$arm" ] && dpkg --compare-versions "$arm" ge "${{ steps.v.outputs.minphp }}"; then
+            echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
+            echo "arm64=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::arm64 skipped: PHP ${arm:-none} is older than ${{ steps.v.outputs.minphp }}"
+            echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
+            echo "arm64=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/setup-qemu-action@v4
+        if: steps.p.outputs.arm64 == 'true'
+
       - uses: docker/setup-buildx-action@v4
 
       - name: Build image (amd64)
@@ -105,7 +125,7 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64
+          platforms: ${{ steps.p.outputs.platforms }}
           push: true
           pull: true
           cache-from: type=gha
@@ -114,3 +134,18 @@ jobs:
             ${{ env.IMAGE }}:${{ steps.v.outputs.baikal }}-php${{ steps.v.outputs.php }}
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:sha-${{ steps.v.outputs.sha }}
+
+      # The Dockerfile already refuses a PHP older than MIN_PHP_VERSION on every
+      # platform; this double-checks the pushed arm64 image under emulation.
+      - name: Check arm64 image
+        if: github.event_name != 'pull_request' && steps.p.outputs.arm64 == 'true'
+        run: |
+          set -euo pipefail
+          img=${{ env.IMAGE }}:sha-${{ steps.v.outputs.sha }}
+          docker run --rm --platform linux/arm64 "$img" uname -m | grep -qx aarch64
+          php_version=$(docker run --rm --platform linux/arm64 "$img" php -r 'echo PHP_VERSION;')
+          echo "arm64 PHP: $php_version"
+          docker run --rm --platform linux/arm64 "$img" php -r "exit(version_compare(PHP_VERSION, '${{ steps.v.outputs.minphp }}', '>=') ? 0 : 1);"
+          modules=$(docker run --rm --platform linux/arm64 "$img" php -m)
+          for m in pdo_mysql pdo_sqlite pgsql; do echo "$modules" | grep -qx "$m"; done
+          echo "- arm64 PHP: \`$php_version\`" >> "$GITHUB_STEP_SUMMARY"
