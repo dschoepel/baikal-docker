@@ -1,0 +1,116 @@
+name: Build and publish
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  schedule:
+    # Weekly rebuild to pick up PHP and Debian security fixes
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/dschoepel/baikal
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read versions from Dockerfile
+        id: v
+        run: |
+          baikal=$(sed -n 's/^ARG BAIKAL_VERSION=//p' Dockerfile)
+          minphp=$(sed -n 's/^ARG MIN_PHP_VERSION=//p' Dockerfile)
+          echo "baikal=$baikal" >> "$GITHUB_OUTPUT"
+          php=$(sed -n 's/^ARG PHP_VERSION=//p' Dockerfile)
+          echo "minphp=$minphp" >> "$GITHUB_OUTPUT"
+          echo "php=$php" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image (amd64)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          pull: true
+          no-cache: ${{ github.event_name == 'schedule' }}
+          load: true
+          tags: baikal:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        id: smoke
+        run: |
+          set -euo pipefail
+          docker run -d --name baikal -p 8080:80 baikal:test
+          trap 'docker logs baikal' ERR
+
+          # Wait for nginx + PHP-FPM
+          for i in $(seq 1 30); do
+            curl -s -o /dev/null http://localhost:8080/ && break
+            sleep 1
+          done
+
+          php_version=$(docker exec baikal php -r 'echo PHP_VERSION;')
+          echo "PHP: $php_version"
+          docker exec baikal php -r "exit(version_compare(PHP_VERSION, '${{ steps.v.outputs.minphp }}', '>=') ? 0 : 1);"
+
+          modules=$(docker exec baikal php -m)
+          for m in pdo_mysql pdo_sqlite pgsql; do
+            echo "$modules" | grep -qx "$m" || { echo "Missing PHP module: $m"; exit 1; }
+          done
+
+          baikal_version=$(docker exec baikal php -r 'require "/var/www/baikal/Core/Distrib.php"; echo BAIKAL_VERSION;')
+          echo "Baikal: $baikal_version"
+          [ "$baikal_version" = "${{ steps.v.outputs.baikal }}" ]
+
+          owner=$(docker exec baikal stat -c %U /var/www/baikal)
+          [ "$owner" = "nginx" ] || { echo "/var/www/baikal owned by $owner"; exit 1; }
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/dav.php/)
+          echo "dav.php: HTTP $code"
+          [ "$code" -lt 500 ]
+
+          # Admin installer page must render through PHP-FPM
+          curl -fsSL http://localhost:8080/admin/install/ | grep -qi 'baikal\|ba&iuml;kal\|baïkal'
+
+          {
+            echo "### Smoke test passed"
+            echo "- PHP: \`$php_version\`"
+            echo "- Baïkal: \`$baikal_version\`"
+            echo "- dav.php: HTTP $code"
+          } >> "$GITHUB_STEP_SUMMARY"
+          docker rm -f baikal
+
+      - name: Log in to ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          pull: true
+          cache-from: type=gha
+          tags: |
+            ${{ env.IMAGE }}:${{ steps.v.outputs.baikal }}
+            ${{ env.IMAGE }}:${{ steps.v.outputs.baikal }}-php${{ steps.v.outputs.php }}
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:sha-${{ steps.v.outputs.sha }}
