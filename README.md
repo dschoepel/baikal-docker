@@ -44,9 +44,24 @@ Environment variables that still work: `MSMTPRC`, `BAIKAL_SKIP_CHOWN`, `NGINX_EN
 | `latest` | newest build from `main` |
 | `0.13.0` | Baïkal version |
 | `0.13.0-php8.4` | Baïkal version + PHP minor version |
+| `0.13.0-php8.4.27` | a specific release (see [Releases](#releases)); not rebuilt |
 | `sha-<commit>` | the exact commit the image was built from |
 
-Tags are rebuilt weekly, so they always carry the newest PHP 8.4 patch release.
+`latest`, `0.13.0` and `0.13.0-php8.4` are rebuilt weekly, so they always carry the newest PHP 8.4 patch release.
+
+## Releases
+
+Each new image version gets a [GitHub release](https://github.com/dschoepel/baikal-docker/releases) and a matching
+image tag, named `<Baïkal version>-php<PHP version>` (e.g. `0.13.0-php8.4.27`). CI publishes one when:
+
+- the Baïkal or PHP version changes (including PHP patch releases picked up by the weekly rebuild), or
+- [CHANGELOG.md](CHANGELOG.md) has notes under **Unreleased**. The release then gets a `-r2`, `-r3`, … suffix if
+  the versions didn't change.
+
+The release notes come from the [RELEASE.md](RELEASE.md) template, filled in with the versions, platforms, image
+digest and the changelog notes. CI then moves those notes into a version section of CHANGELOG.md and commits it.
+
+**When you change the repo:** add a line under `## Unreleased` in CHANGELOG.md in the same commit.
 
 ## Usage
 

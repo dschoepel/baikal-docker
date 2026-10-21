@@ -11,8 +11,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write   # publish releases and commit CHANGELOG.md
   packages: write
+
+# Never run two builds of main at once (releases and the CHANGELOG commit would race)
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   IMAGE: ghcr.io/dschoepel/baikal
@@ -83,6 +88,7 @@ jobs:
 
           php_version=$(docker exec baikal php -r 'echo PHP_VERSION;')
           echo "PHP: $php_version"
+          echo "php_full=$php_version" >> "$GITHUB_OUTPUT"
           docker exec baikal php -r "exit(version_compare(PHP_VERSION, '${{ steps.v.outputs.minphp }}', '>=') ? 0 : 1);"
 
           modules=$(docker exec baikal php -m)
@@ -112,6 +118,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           docker rm -f baikal
 
+      # Decide whether this build is a new release (new Baïkal/PHP version, or unreleased
+      # notes in CHANGELOG.md). Empty version = no release, just refresh the rolling tags.
+      - name: Plan release
+        id: rel
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BAIKAL_VERSION: ${{ steps.v.outputs.baikal }}
+          PHP_VERSION: ${{ steps.smoke.outputs.php_full }}
+        run: |
+          python3 .github/scripts/release.py plan | tee -a "$GITHUB_OUTPUT"
+
       - name: Log in to ghcr.io
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
@@ -121,6 +139,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Push
+        id: push
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v7
         with:
@@ -134,6 +153,7 @@ jobs:
             ${{ env.IMAGE }}:${{ steps.v.outputs.baikal }}-php${{ steps.v.outputs.php }}
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:sha-${{ steps.v.outputs.sha }}
+            ${{ steps.rel.outputs.version && format('{0}:{1}', env.IMAGE, steps.rel.outputs.version) || '' }}
 
       # The Dockerfile already refuses a PHP older than MIN_PHP_VERSION on every
       # platform; this double-checks the pushed arm64 image under emulation.
@@ -149,3 +169,20 @@ jobs:
           modules=$(docker run --rm --platform linux/arm64 "$img" php -m)
           for m in pdo_mysql pdo_sqlite pgsql; do echo "$modules" | grep -qx "$m"; done
           echo "- arm64 PHP: \`$php_version\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish release
+        if: steps.rel.outputs.version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.rel.outputs.version }}
+          BAIKAL_VERSION: ${{ steps.v.outputs.baikal }}
+          PHP_VERSION: ${{ steps.smoke.outputs.php_full }}
+          PLATFORMS: ${{ steps.p.outputs.platforms }}
+          IMAGE: ${{ env.IMAGE }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+          COMMIT: ${{ github.sha }}
+        run: python3 .github/scripts/release.py publish
+
+      - name: Release summary
+        if: steps.rel.outputs.version != ''
+        run: echo "- Release: [${{ steps.rel.outputs.version }}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.rel.outputs.version }})" >> "$GITHUB_STEP_SUMMARY"
